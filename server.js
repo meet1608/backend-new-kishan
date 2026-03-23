@@ -374,7 +374,29 @@ app.post("/api/contact", async (req, res) => {
 });
 
 // ─── Health check ─────────────────────────────────────────────
-app.get("/api/health", (_req, res) => res.json({ status: "ok" }));
+app.get("/api/health", (_req, res) => {
+  const uptimeSeconds = Math.floor(process.uptime());
+  const hours   = Math.floor(uptimeSeconds / 3600);
+  const minutes = Math.floor((uptimeSeconds % 3600) / 60);
+  const seconds = uptimeSeconds % 60;
+
+  res.json({
+    status:      "ok",
+    server:      "New Kishan Backend",
+    environment: process.env.NODE_ENV || "development",
+    uptime:      `${hours}h ${minutes}m ${seconds}s`,
+    timestamp:   new Date().toLocaleString("en-IN", { timeZone: "Asia/Kolkata" }) + " IST",
+    email: {
+      configured:    !!(process.env.GMAIL_USER && process.env.GMAIL_APP_PASSWORD),
+      sender:        process.env.GMAIL_USER        || "NOT SET",
+      recipient:     process.env.RECIPIENT_EMAIL   || "NOT SET",
+    },
+    endpoints: {
+      health:  "GET  /api/health",
+      contact: "POST /api/contact",
+    },
+  });
+});
 
 // ─── Keep-alive ping (prevents Render free tier from sleeping) ─
 setInterval(() => {
