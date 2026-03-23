@@ -376,6 +376,12 @@ app.post("/api/contact", async (req, res) => {
 // ─── Health check ─────────────────────────────────────────────
 app.get("/api/health", (_req, res) => res.json({ status: "ok" }));
 
+// ─── Keep-alive ping (prevents Render free tier from sleeping) ─
+setInterval(() => {
+  const url = `http://localhost:${PORT}/api/health`;
+  require("http").get(url, () => {}).on("error", () => {});
+}, 14 * 60 * 1000); // every 14 minutes
+
 // ─── Start ────────────────────────────────────────────────────
 app.listen(PORT, () => {
   console.log(`✅  New Kishan backend running on http://localhost:${PORT}`);
