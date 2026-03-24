@@ -9,6 +9,36 @@ const app  = express();
 const PORT = process.env.PORT || 5000;
 
 // ─── Middleware ───────────────────────────────────────────────
+
+// Request logging middleware — logs every incoming request
+app.use((req, res, next) => {
+  const timestamp = new Date().toLocaleString("en-IN", { timeZone: "Asia/Kolkata" });
+  const ip = req.headers["x-forwarded-for"] || req.socket.remoteAddress || "unknown";
+  
+  console.log("\n" + "=".repeat(70));
+  console.log(`📥 INCOMING REQUEST [${timestamp} IST]`);
+  console.log("=".repeat(70));
+  console.log(`Method:  ${req.method}`);
+  console.log(`Path:    ${req.path}`);
+  console.log(`Origin:  ${req.headers.origin || "none"}`);
+  console.log(`IP:      ${ip}`);
+  console.log(`User-Agent: ${req.headers["user-agent"] || "none"}`);
+  
+  if (req.method === "POST" && req.body) {
+    console.log(`Body:    ${JSON.stringify(req.body, null, 2)}`);
+  }
+  
+  // Log response when it finishes
+  const originalSend = res.send;
+  res.send = function (data) {
+    console.log(`✅ Response: ${res.statusCode}`);
+    console.log("=".repeat(70) + "\n");
+    originalSend.call(this, data);
+  };
+  
+  next();
+});
+
 app.use(express.json());
 
 const allowedOrigins = [
@@ -23,9 +53,16 @@ app.use(
     origin: (origin, callback) => {
       // Allow requests with no origin (curl, Postman, server-to-server)
       if (!origin) return callback(null, true);
-      if (allowedOrigins.includes(origin)) return callback(null, true);
+      if (allowedOrigins.includes(origin)) {
+        console.log(`✅ CORS: Allowed origin: ${origin}`);
+        return callback(null, true);
+      }
       // Also allow whatever FRONTEND_URL is set to on Render
-      if (process.env.FRONTEND_URL && origin === process.env.FRONTEND_URL) return callback(null, true);
+      if (process.env.FRONTEND_URL && origin === process.env.FRONTEND_URL) {
+        console.log(`✅ CORS: Allowed via FRONTEND_URL: ${origin}`);
+        return callback(null, true);
+      }
+      console.log(`❌ CORS: Blocked origin: ${origin}`);
       callback(new Error(`CORS blocked: ${origin}`));
     },
     methods: ["GET", "POST", "OPTIONS"],
@@ -333,8 +370,11 @@ function buildCustomerEmail(name) {
 app.post("/api/contact", async (req, res) => {
   const { name, phone, email, pipeType, pipeSize, quantity, message } = req.body;
 
+  console.log(`📧 Contact form submission from: ${name} <${email}>`);
+
   // Required fields
   if (!name || !phone || !email || !pipeType || !pipeSize) {
+    console.log("❌ Validation failed: missing required fields");
     return res.status(400).json({
       success: false,
       message: "Please fill in all required fields.",
@@ -344,12 +384,14 @@ app.post("/api/contact", async (req, res) => {
   // Email format
   const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
   if (!emailRegex.test(String(email).trim())) {
+    console.log(`❌ Validation failed: invalid email — ${email}`);
     return res.status(400).json({ success: false, message: "Invalid email address." });
   }
 
   // Phone: exactly 10 digits, starts with 6-9
   const phoneDigits = String(phone).replace(/\s+/g, "");
   if (!/^[6-9]\d{9}$/.test(phoneDigits)) {
+    console.log(`❌ Validation failed: invalid phone — ${phone}`);
     return res.status(400).json({ success: false, message: "Enter a valid 10-digit Indian mobile number." });
   }
 
@@ -357,12 +399,16 @@ app.post("/api/contact", async (req, res) => {
   if (quantity !== undefined && quantity !== "") {
     const qty = Number(quantity);
     if (!Number.isInteger(qty) || qty < 1) {
+      console.log(`❌ Validation failed: invalid quantity — ${quantity}`);
       return res.status(400).json({ success: false, message: "Quantity must be a positive number." });
     }
   }
 
+  console.log("✅ Validation passed — sending emails...");
+
   try {
     // 1. Email to business owner
+    console.log(`📤 Sending owner email to: ${process.env.RECIPIENT_EMAIL}`);
     await transporter.sendMail({
       from: `"New Kishan Website" <${process.env.GMAIL_USER}>`,
       to: process.env.RECIPIENT_EMAIL,
@@ -370,21 +416,25 @@ app.post("/api/contact", async (req, res) => {
       subject: `New Enquiry: ${pipeType} – ${pipeSize} from ${name}`,
       html: buildOwnerEmail({ name, phone, email, pipeType, pipeSize, quantity, message }),
     });
+    console.log("✅ Owner email sent successfully");
 
     // 2. Confirmation email to customer
+    console.log(`📤 Sending confirmation email to customer: ${email}`);
     await transporter.sendMail({
       from: `"New Kishan" <${process.env.GMAIL_USER}>`,
       to: email,
       subject: "We received your enquiry – New Kishan",
       html: buildCustomerEmail(name),
     });
+    console.log("✅ Customer confirmation email sent successfully");
 
     return res.status(200).json({
       success: true,
       message: "Enquiry sent successfully.",
     });
   } catch (err) {
-    console.error("Mail error:", err);
+    console.error("❌ Mail error:", err.message);
+    console.error("   Full error:", err);
     return res.status(500).json({
       success: false,
       message: "Failed to send enquiry. Please try again or call us directly.",
