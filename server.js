@@ -11,12 +11,31 @@ const PORT = process.env.PORT || 5000;
 // ─── Middleware ───────────────────────────────────────────────
 app.use(express.json());
 
+const allowedOrigins = [
+  "https://www.newkishanpipe.com",
+  "https://newkishanpipe.com",
+  "http://localhost:5173",
+  "http://localhost:8080",
+];
+
 app.use(
   cors({
-    origin: process.env.FRONTEND_URL || "http://localhost:5173",
-    methods: ["POST"],
+    origin: (origin, callback) => {
+      // Allow requests with no origin (curl, Postman, server-to-server)
+      if (!origin) return callback(null, true);
+      if (allowedOrigins.includes(origin)) return callback(null, true);
+      // Also allow whatever FRONTEND_URL is set to on Render
+      if (process.env.FRONTEND_URL && origin === process.env.FRONTEND_URL) return callback(null, true);
+      callback(new Error(`CORS blocked: ${origin}`));
+    },
+    methods: ["GET", "POST", "OPTIONS"],
+    allowedHeaders: ["Content-Type"],
+    credentials: false,
   })
 );
+
+// Handle preflight for all routes
+app.options("*", cors());
 
 // Rate-limit: max 10 enquiries per IP per 15 minutes
 const limiter = rateLimit({
