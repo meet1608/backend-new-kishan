@@ -41,38 +41,21 @@ app.use((req, res, next) => {
 
 app.use(express.json());
 
-const allowedOrigins = [
-  "https://www.newkishanpipe.com",
-  "https://newkishanpipe.com",
-  "http://localhost:5173",
-  "http://localhost:8080",
-];
-
 app.use(
   cors({
-    origin: (origin, callback) => {
-      // Allow requests with no origin (curl, Postman, server-to-server)
-      if (!origin) return callback(null, true);
-      if (allowedOrigins.includes(origin)) {
-        console.log(`✅ CORS: Allowed origin: ${origin}`);
-        return callback(null, true);
-      }
-      // Also allow whatever FRONTEND_URL is set to on Render
-      if (process.env.FRONTEND_URL && origin === process.env.FRONTEND_URL) {
-        console.log(`✅ CORS: Allowed via FRONTEND_URL: ${origin}`);
-        return callback(null, true);
-      }
-      console.log(`❌ CORS: Blocked origin: ${origin}`);
-      callback(new Error(`CORS blocked: ${origin}`));
-    },
+    origin: "*",
     methods: ["GET", "POST", "OPTIONS"],
     allowedHeaders: ["Content-Type"],
-    credentials: false,
   })
 );
 
 // Handle preflight for all routes
-app.options("*", cors());
+app.options("*", (_req, res) => {
+  res.setHeader("Access-Control-Allow-Origin", "*");
+  res.setHeader("Access-Control-Allow-Methods", "GET, POST, OPTIONS");
+  res.setHeader("Access-Control-Allow-Headers", "Content-Type");
+  res.sendStatus(204);
+});
 
 // Rate-limit: max 10 enquiries per IP per 15 minutes
 const limiter = rateLimit({
