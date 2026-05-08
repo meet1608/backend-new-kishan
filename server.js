@@ -1,12 +1,13 @@
 require("dotenv").config();
 
-const express    = require("express");
-const cors       = require("cors");
-const rateLimit  = require("express-rate-limit");
-const nodemailer = require("nodemailer");
+const express   = require("express");
+const cors      = require("cors");
+const rateLimit = require("express-rate-limit");
+const { Resend } = require("resend");
 
-const app  = express();
-const PORT = process.env.PORT || 5000;
+const app    = express();
+const PORT   = process.env.PORT || 5000;
+const resend = new Resend(process.env.RESEND_API_KEY);
 
 // ─── Middleware ───────────────────────────────────────────────
 
@@ -14,7 +15,7 @@ const PORT = process.env.PORT || 5000;
 app.use((req, res, next) => {
   const timestamp = new Date().toLocaleString("en-IN", { timeZone: "Asia/Kolkata" });
   const ip = req.headers["x-forwarded-for"] || req.socket.remoteAddress || "unknown";
-  
+
   console.log("\n" + "=".repeat(70));
   console.log(`📥 INCOMING REQUEST [${timestamp} IST]`);
   console.log("=".repeat(70));
@@ -23,11 +24,11 @@ app.use((req, res, next) => {
   console.log(`Origin:  ${req.headers.origin || "none"}`);
   console.log(`IP:      ${ip}`);
   console.log(`User-Agent: ${req.headers["user-agent"] || "none"}`);
-  
+
   if (req.method === "POST" && req.body) {
     console.log(`Body:    ${JSON.stringify(req.body, null, 2)}`);
   }
-  
+
   // Log response when it finishes
   const originalSend = res.send;
   res.send = function (data) {
@@ -35,7 +36,7 @@ app.use((req, res, next) => {
     console.log("=".repeat(70) + "\n");
     originalSend.call(this, data);
   };
-  
+
   next();
 });
 
@@ -65,53 +66,39 @@ const limiter = rateLimit({
 });
 app.use("/api/contact", limiter);
 
-// ─── Nodemailer transporter ───────────────────────────────────
-// const transporter = nodemailer.createTransport({
-//   host: "smtp.gmail.com",
-//   port: 587,
-//   secure: false, // use STARTTLS
-//   auth: {
-//     user: process.env.GMAIL_USER,
-//     pass: process.env.GMAIL_APP_PASSWORD,
-//   },
-//   tls: {
-//     rejectUnauthorized: false, // Allow self-signed certs (Render compatibility)
-//   },
-//   connectionTimeout: 10000,   // 10s connection timeout
-//   greetingTimeout: 10000,     // 10s greeting timeout
-//   socketTimeout: 15000,       // 15s socket timeout
-// });
-
-console.log("GMAIL_USER:", process.env.GMAIL_USER);
-console.log("APP_PASSWORD_EXISTS:", !!process.env.GMAIL_APP_PASSWORD);
-console.log("RECIPIENT_EMAIL:", process.env.RECIPIENT_EMAIL);
-
-const transporter = nodemailer.createTransport({
-  service: "gmail",
-  auth: {
-    user: process.env.GMAIL_USER,
-    pass: process.env.GMAIL_APP_PASSWORD,
-  },
-});
-
-// Verify transporter on startup
-// transporter.verify((error, success) => {
-//   if (error) {
-//     console.error("❌ SMTP connection failed:", error.message);
-//     console.error("   Check GMAIL_USER and GMAIL_APP_PASSWORD env vars");
-//   } else {
-//     console.log("✅ SMTP ready — emails can be sent");
-//   }
-// });
+// Log env vars on startup (no secrets)
+console.log("RESEND_API_KEY exists:", !!process.env.RESEND_API_KEY);
+console.log("SENDER_EMAIL:",          process.env.SENDER_EMAIL    || "NOT SET");
+console.log("RECIPIENT_EMAIL:",       process.env.RECIPIENT_EMAIL || "NOT SET");
 
 // ─── Helpers ─────────────────────────────────────────────────
 function escapeHtml(str) {
   if (!str) return "";
   return String(str)
-    .replace(/&/g, "&amp;")
-    .replace(/</g, "&lt;")
-    .replace(/>/g, "&gt;")
-    .replace(/"/g, "&quot;");
+    .replace(/&/g,  "&amp;")
+    .replace(/</g,  "&lt;")
+    .replace(/>/g,  "&gt;")
+    .replace(/"/g,  "&quot;");
+}
+
+// Single data row — stacks label above value on mobile via CSS classes
+function mobileRow(label, value, shaded) {
+  const bg = shaded ? "#f9f8f6" : "#ffffff";
+  return `
+  <tr style="background:${bg};">
+    <td class="data-label"
+        style="padding:11px 18px;font-size:12px;font-weight:700;color:#6b7280;
+               text-transform:uppercase;letter-spacing:0.1em;
+               width:36%;border-bottom:1px solid #e8e5e0;vertical-align:top;">
+      ${label}
+    </td>
+    <td class="data-value"
+        style="padding:11px 18px;font-size:14px;color:#111827;
+               border-bottom:1px solid #e8e5e0;vertical-align:top;
+               word-break:break-word;">
+      ${value}
+    </td>
+  </tr>`;
 }
 
 function buildOwnerEmail(data) {
@@ -265,26 +252,6 @@ function buildOwnerEmail(data) {
 </html>`;
 }
 
-// Single data row — stacks label above value on mobile via CSS classes
-function mobileRow(label, value, shaded) {
-  const bg = shaded ? "#f9f8f6" : "#ffffff";
-  return `
-  <tr style="background:${bg};">
-    <td class="data-label"
-        style="padding:11px 18px;font-size:12px;font-weight:700;color:#6b7280;
-               text-transform:uppercase;letter-spacing:0.1em;
-               width:36%;border-bottom:1px solid #e8e5e0;vertical-align:top;">
-      ${label}
-    </td>
-    <td class="data-value"
-        style="padding:11px 18px;font-size:14px;color:#111827;
-               border-bottom:1px solid #e8e5e0;vertical-align:top;
-               word-break:break-word;">
-      ${value}
-    </td>
-  </tr>`;
-}
-
 function buildCustomerEmail(name) {
   return `<!DOCTYPE html>
 <html lang="en" xmlns="http://www.w3.org/1999/xhtml">
@@ -417,14 +384,14 @@ app.post("/api/contact", async (req, res) => {
     }
   }
 
-  console.log("✅ Validation passed — sending emails...");
+  console.log("✅ Validation passed — sending emails via Resend...");
 
   try {
     // 1. Email to business owner
     console.log(`📤 Sending owner email to: ${process.env.RECIPIENT_EMAIL}`);
-    await transporter.sendMail({
-      from: `"New Kishan Website" <${process.env.GMAIL_USER}>`,
-      to: process.env.RECIPIENT_EMAIL,
+    await resend.emails.send({
+      from: process.env.SENDER_EMAIL,
+      to:   process.env.RECIPIENT_EMAIL,
       replyTo: email,
       subject: `New Enquiry: ${pipeType} – ${pipeSize} from ${name}`,
       html: buildOwnerEmail({ name, phone, email, pipeType, pipeSize, quantity, message }),
@@ -433,11 +400,11 @@ app.post("/api/contact", async (req, res) => {
 
     // 2. Confirmation email to customer
     console.log(`📤 Sending confirmation email to customer: ${email}`);
-    await transporter.sendMail({
-      from: `"New Kishan" <${process.env.GMAIL_USER}>`,
-      to: email,
+    await resend.emails.send({
+      from:    process.env.SENDER_EMAIL,
+      to:      email,
       subject: "We received your enquiry – New Kishan",
-      html: buildCustomerEmail(name),
+      html:    buildCustomerEmail(name),
     });
     console.log("✅ Customer confirmation email sent successfully");
 
@@ -446,9 +413,7 @@ app.post("/api/contact", async (req, res) => {
       message: "Enquiry sent successfully.",
     });
   } catch (err) {
-    console.error("❌ Mail error:", err.message);
-    console.error("   Error code:", err.code);
-    console.error("   Response code:", err.responseCode);
+    console.error("❌ Resend error:", err.message);
     console.error("   Full error:", err);
     return res.status(500).json({
       success: false,
@@ -471,9 +436,9 @@ app.get("/api/health", (_req, res) => {
     uptime:      `${hours}h ${minutes}m ${seconds}s`,
     timestamp:   new Date().toLocaleString("en-IN", { timeZone: "Asia/Kolkata" }) + " IST",
     email: {
-      configured:    !!(process.env.GMAIL_USER && process.env.GMAIL_APP_PASSWORD),
-      sender:        process.env.GMAIL_USER        || "NOT SET",
-      recipient:     process.env.RECIPIENT_EMAIL   || "NOT SET",
+      configured: !!process.env.RESEND_API_KEY,
+      sender:     process.env.SENDER_EMAIL    || "NOT SET",
+      recipient:  process.env.RECIPIENT_EMAIL || "NOT SET",
     },
     endpoints: {
       health:  "GET  /api/health",
