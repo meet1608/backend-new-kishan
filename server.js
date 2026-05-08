@@ -66,31 +66,43 @@ const limiter = rateLimit({
 app.use("/api/contact", limiter);
 
 // ─── Nodemailer transporter ───────────────────────────────────
+// const transporter = nodemailer.createTransport({
+//   host: "smtp.gmail.com",
+//   port: 587,
+//   secure: false, // use STARTTLS
+//   auth: {
+//     user: process.env.GMAIL_USER,
+//     pass: process.env.GMAIL_APP_PASSWORD,
+//   },
+//   tls: {
+//     rejectUnauthorized: false, // Allow self-signed certs (Render compatibility)
+//   },
+//   connectionTimeout: 10000,   // 10s connection timeout
+//   greetingTimeout: 10000,     // 10s greeting timeout
+//   socketTimeout: 15000,       // 15s socket timeout
+// });
+
+console.log("GMAIL_USER:", process.env.GMAIL_USER);
+console.log("APP_PASSWORD_EXISTS:", !!process.env.GMAIL_APP_PASSWORD);
+console.log("RECIPIENT_EMAIL:", process.env.RECIPIENT_EMAIL);
+
 const transporter = nodemailer.createTransport({
-  host: "smtp.gmail.com",
-  port: 587,
-  secure: false, // use STARTTLS
+  service: "gmail",
   auth: {
     user: process.env.GMAIL_USER,
     pass: process.env.GMAIL_APP_PASSWORD,
   },
-  tls: {
-    rejectUnauthorized: false, // Allow self-signed certs (Render compatibility)
-  },
-  connectionTimeout: 10000,   // 10s connection timeout
-  greetingTimeout: 10000,     // 10s greeting timeout
-  socketTimeout: 15000,       // 15s socket timeout
 });
 
 // Verify transporter on startup
-transporter.verify((error, success) => {
-  if (error) {
-    console.error("❌ SMTP connection failed:", error.message);
-    console.error("   Check GMAIL_USER and GMAIL_APP_PASSWORD env vars");
-  } else {
-    console.log("✅ SMTP ready — emails can be sent");
-  }
-});
+// transporter.verify((error, success) => {
+//   if (error) {
+//     console.error("❌ SMTP connection failed:", error.message);
+//     console.error("   Check GMAIL_USER and GMAIL_APP_PASSWORD env vars");
+//   } else {
+//     console.log("✅ SMTP ready — emails can be sent");
+//   }
+// });
 
 // ─── Helpers ─────────────────────────────────────────────────
 function escapeHtml(str) {
@@ -435,6 +447,8 @@ app.post("/api/contact", async (req, res) => {
     });
   } catch (err) {
     console.error("❌ Mail error:", err.message);
+    console.error("   Error code:", err.code);
+    console.error("   Response code:", err.responseCode);
     console.error("   Full error:", err);
     return res.status(500).json({
       success: false,
